@@ -26,10 +26,9 @@
 #include <functional>
 #include <memory>
 #include <list>
-#include <setjmp.h>
+#include <boost/context/all.hpp>
 
-
-namespace fibers
+namespace fibers11
 {
     const size_t default_stack_size = 64 * 1024;
 
@@ -39,45 +38,52 @@ namespace fibers
         {
             FIBER_CREATED,
             FIBER_RUNNING,
+            FIBER_TERMINATING,
             FIBER_FINISHED
         } state = FIBER_CREATED;
 
-        jmp_buf ctx;
-        std::function<void()> fnc;
+        std::function<void()> callable;
+        std::shared_ptr<uint8_t> stack = 0;
+        boost::context::fcontext_t fiber_context = 0;
         size_t last_yield = 0;
-        int32_t sleep_time = 0;
+        size_t sleep_time = 0;
         size_t stack_size = 0;
-        std::shared_ptr<void> stack = 0;
-        void* sp = 0;
+        bool preserve_fpu = false;
+
+        // Creates a stackful fiber which will execute `callable`. Stack size can be specified, defaults ot 64K.
+        // Custom stack may be passed to the function. Correct stack size must still be provided.
+        // Callable may be c/c++ function pointer, c++ lambda with captured context or result of std::bind().
+        fiber_t(std::function<void()> callable, bool preserve_fpu=false, size_t stack_size = default_stack_size,
+                std::shared_ptr<uint8_t> stack=0);
+
+        // Next time yield() is called it will return `false`, then it is up to coroutine to terminate execution.
+        void terminate();
     };
 
     struct fiberset_t
     {
-        std::list<fiber_t> active_fibers;
+        std::list<fiber_t*> active_fibers;
         fiber_t* current = 0;
-        jmp_buf ctx_main;
+        boost::context::fcontext_t scheduler_context = 0;
 
-        // This function operates on global fiberset.
-        // Creates a stackful fiber which will execute `callable`. Stack size can be specified, defaults ot 64K. Custom stack may
-        // be passed to the function. Correct stack size must still be provided.
-        // Callable may be c/c++ function pointer, c++ lambda with captured context or result of std::bind().
-        fiber_t* create(std::function<void()> callable, size_t stack_size = default_stack_size, std::shared_ptr<void> stack=0);
+        // Adds fiber to fiberset for scheduling execution.
+        void add(fiber_t& fiber);
 
         // Returns number of active fibers.
-        size_t num_active();
+        size_t count();
 
         // Checks active fibers and runs them if they are not sleeping. This is done once. Returns number of milliseconds
         // left until next earliest fiber.
         size_t schedule();
-
-        // Terminates fiber. Warning: this does not do any stack unwinding. Resources may leak. Use only if you know what you are doing.
-        void terminate(fiber_t* fiber);
 
         // Executes fibers until all they all terminate.
         void run();
     };
 
     // Yields execution. It will resume no sooner than after `sleep` ms.
-    void yield(int32_t sleep=0);
+    bool yield(size_t sleep=0);
+
+    // Yields execution. It will immediately start executing fiber `into` bypassing scheduler altogeather.
+    bool yield(fiber_t& into);
 }
 

@@ -35,23 +35,23 @@ void function()
     for (i = 0; i < 5; i++) {
         numbers.push_back(i);
         printf("Fiber 1: %d\n", i);
-        fibers::yield(100);
+        fibers11::yield(100);
     }
     assert (i >= 0 && i <= 5);
 }
 
 int32_t main(int32_t argc, char *argv[])
 {
-    fibers::fiberset_t fs;
+    fibers11::fiberset_t fs;
 
-    fs.create(&function);
+    fibers11::fiber_t f1(&function);
 
     int32_t captured_counter = 10;
-    fs.create([&]() {
+    fibers11::fiber_t f2([&]() {
         for (; captured_counter >= 0 && captured_counter < 15; captured_counter++) {
             numbers.push_back(captured_counter);
             printf("Fiber 2: %d\n", captured_counter);
-            fibers::yield(210);
+            fibers11::yield(210);
         }
         assert (captured_counter >= 10 && captured_counter <= 15);
     });
@@ -64,13 +64,16 @@ int32_t main(int32_t argc, char *argv[])
             for (; i < 105; i++) {
                 numbers.push_back(i);
                 printf("Fiber 3: %d\n", i);
-                fibers::yield(320);
+                fibers11::yield(320);
             }
             assert (i >= 100 && i <= 105);
         }
     } obj;
-    fs.create(std::bind(&BindDemo::method, obj, 100));
+    fibers11::fiber_t f3(std::bind(&BindDemo::method, obj, 100));
 
+    fs.add(f1);
+    fs.add(f2);
+    fs.add(f3);
     fs.run();
 
     std::vector<int32_t> expected = std::vector<int32_t>{0, 10, 100, 1, 2, 11, 3, 101, 4, 12, 13, 102, 14, 103, 104};
